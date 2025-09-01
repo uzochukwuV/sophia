@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 type PostCardProps = {
   reversed?: boolean;
   image: string;
@@ -12,11 +14,16 @@ type PostCardProps = {
   creatorAvatar: string;
   creatorHandle: string;
   metrics?: {
-    likes: string;
-    comments: string;
+    likes: number | string;
+    comments: number | string;
   };
   extraRightTop?: React.ReactNode;
   extraMiddle?: React.ReactNode;
+  // Social actions
+  rootHash?: string;
+  onLike?: () => Promise<void> | void;
+  onComment?: (text: string) => Promise<void> | void;
+  showActions?: boolean;
 };
 
 export default function PostCard(props: PostCardProps) {
@@ -33,8 +40,27 @@ export default function PostCard(props: PostCardProps) {
     creatorHandle,
     metrics,
     extraRightTop,
-    extraMiddle
+    extraMiddle,
+    onLike,
+    onComment,
+    showActions
   } = props;
+
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submitComment = async () => {
+    if (!onComment || !commentText.trim()) return;
+    setSubmitting(true);
+    try {
+      await onComment(commentText.trim());
+      setCommentText('');
+      setCommentOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className={`post-card bg-[#1A1A1A] rounded-2xl mb-8 overflow-hidden flex gap-6 p-6 ${reversed ? 'flex-row-reverse' : ''}`}>
@@ -73,11 +99,43 @@ export default function PostCard(props: PostCardProps) {
           </div>
           {metrics && (
             <div className="flex items-center space-x-4 text-gray-400">
-              <span className="flex items-center"><span className="material-icons mr-1">favorite_border</span> {metrics.likes}</span>
-              <span className="flex items-center"><span className="material-icons mr-1">chat_bubble_outline</span> {metrics.comments}</span>
+              <button
+                onClick={() => onLike && onLike()}
+                className="flex items-center hover:text-white transition"
+                title="Like"
+              >
+                <span className="material-icons mr-1">favorite_border</span> {metrics.likes}
+              </button>
+              <button
+                onClick={() => setCommentOpen((v) => !v)}
+                className="flex items-center hover:text-white transition"
+                title="Comment"
+              >
+                <span className="material-icons mr-1">chat_bubble_outline</span> {metrics.comments}
+              </button>
             </div>
           )}
         </div>
+
+        {showActions && commentOpen && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2">
+              <input
+                className="flex-1 bg-[#111111] border border-gray-700 rounded-md p-2 outline-none focus:border-blue-500"
+                placeholder="Write a comment…"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+              />
+              <button
+                onClick={submitComment}
+                disabled={submitting || !commentText.trim()}
+                className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold px-3 py-2 rounded-md"
+              >
+                {submitting ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

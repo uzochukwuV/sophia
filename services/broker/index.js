@@ -40,6 +40,12 @@ const config = {
   }
 };
 
+// In-memory feed index and interactions
+const postsIndex = []; // newest first
+const postMetrics = new Map(); // rootHash -> {likes, comments, views}
+const postComments = new Map(); // rootHash -> [{id,user,content,createdAt}]
+const idToRoot = new Map(); // postId -> rootHash
+
 // Initialize providers and services
 let provider, signer, storage, computeBroker;
 let platformContract, traditionalNFTContract, inftContract;
@@ -172,10 +178,14 @@ class SocialDataManager {
       const buffer = Buffer.from(JSON.stringify(data));
       const result = await this.storage.upload(buffer);
 
+      // Cache full post content by root
+      const rootHash = result.rootHash || result.root || result.hash;
+      this.cache.set(rootHash, { data, cachedAt: Date.now() });
+
       return {
         success: true,
         postId: data.id,
-        rootHash: result.rootHash || result.root || result.hash,
+        rootHash,
         size: buffer.length
       };
     } catch (error) {
@@ -191,7 +201,7 @@ class SocialDataManager {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         type: interactionData.type, // 'like', 'comment', 'repost'
         user: interactionData.user,
-        targetId: interactionData.targetId, // post ID or comment ID
+        targetId: interactionData.targetId, // using rootHash for posts
         content: interactionData.content || null, // for comments
         createdAt: Date.now()
       };
@@ -203,7 +213,8 @@ class SocialDataManager {
         success: true,
         interactionId: data.id,
         rootHash: result.rootHash || result.root || result.hash,
-        size: buffer.length
+        size: buffer.length,
+        interaction: data
       };
     } catch (error) {
       console.error('Failed to store interaction:', error);
@@ -502,6 +513,21 @@ app.post('/api/posts', async (req, res) => {
     const result = await socialDataManager.storePost(postData);
     
     if (result.success) {
+      // Update in-memory index
+      idToRoot.set(result.postId, result.rootHash);
+      postMetrics.set(result.rootHash, { likes: 0, comments: 0, views: 0 });
+      postComments.set(result.rootHash, []);
+      postsIndex.unshift({
+        postId: result.postId,
+        rootHash: result.rootHash,
+        creator,
+        createdAt: Date.now(),
+        excerpt: processedContent.slice(0, 180),
+        media: mediaHashes
+      });
+      // cap feed size
+      if (postsIndex.length > 500) postsIndex.length = 500;
+
       res.json({
         success: true,
         message: 'Post created successfully',
@@ -529,6 +555,8 @@ app.get('/api/posts/:rootHash', async (req, res) => {
       res.json({
         success: true,
         post: result.data,
+        metrics: postMetrics.get(rootHash) || { likes: 0, comments: 0, views: 0 },
+        comments: postComments.get(rootHash) || [],
         fromCache: result.fromCache
       });
     } else {
@@ -538,6 +566,40 @@ app.get('/api/posts/:rootHash', async (req, res) => {
     console.error('Post retrieval error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Feed endpoint (simple in-memory index)
+app.get('/api/feed', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 50);
+    const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+
+    const slice = postsIndex.slice(offset, offset + limit);
+    const items = await Promise.all(slice.map(async (p) => {
+      // Try cached full content
+      const cached = socialDataManager.getCachedByHash(p.rootHash);
+      const content = cached?.data || null;
+      return {
+        ...p,
+        content,
+        metrics: postMetrics.get(p.rootHash) || { likes: 0, comments: 0, views: 0 }
+      };
+    }));
+
+    res.json({ success: true, items, total: postsIndex.length });
+  } catch (error) {
+    console.error('Feed error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get comments for a post
+app.get('/api/posts/:rootHash/comments', (req, res) => {
+  const { rootHash } = req.params;
+  res.json({
+    success: true,
+    comments: postComments.get(rootHash) || []
+  });
 });
 
 // Social interactions (like, comment)
@@ -557,12 +619,30 @@ app.post('/api/interactions', async (req, res) => {
     const result = await socialDataManager.storeInteraction(interactionData);
     
     if (result.success) {
+      // Update in-memory metrics
+      const m = postMetrics.get(targetId) || { likes: 0, comments: 0, views: 0 };
+      if (type === 'like') {
+        m.likes += 1;
+        postMetrics.set(targetId, m);
+      } else if (type === 'comment') {
+        m.comments += 1;
+        postMetrics.set(targetId, m);
+        const list = postComments.get(targetId) || [];
+        list.unshift({
+          id: result.interactionId,
+          user,
+          content,
+          createdAt: Date.now()
+        });
+        postComments.set(targetId, list.slice(0, 200)); // cap
+      }
+
       res.json({
         success: true,
         message: 'Interaction stored successfully',
         interactionId: result.interactionId,
         rootHash: result.rootHash,
-        storageSize: result.size
+        metrics: postMetrics.get(targetId)
       });
     } else {
       res.status(500).json({ error: result.error });
@@ -759,6 +839,8 @@ async function startServer() {
       console.log(`   - Health: GET /health`);
       console.log(`   - Profiles: POST/GET /api/users/profile`);
       console.log(`   - Posts: POST/GET /api/posts`);
+      console.log(`   - Feed: GET /api/feed`);
+      console.log(`   - Comments: GET /api/posts/:rootHash/comments`);
       console.log(`   - Interactions: POST /api/interactions`);
       console.log(`   - AI Generate: POST /api/ai/generate-text`);
       console.log(`   - AI Analyze: POST /api/ai/analyze-content`);
