@@ -1,5 +1,6 @@
 import './globals.css';
 import { ReactNode } from 'react';
+import Providers from './providers';
 
 export const metadata = {
   title: 'Neural Creator',
@@ -18,7 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
       </head>
       <body className="bg-[#111111] text-[#E0E0E0] font-[Inter,sans-serif]">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

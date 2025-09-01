@@ -1,5 +1,9 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+
+const ConnectWallet = dynamic(() => import('./ConnectWallet'), { ssr: false });
+
 export default function Navbar() {
   return (
     <header className="flex justify-between items-center mb-8">
@@ -11,6 +15,7 @@ export default function Navbar() {
         <button className="hover:text-white text-gray-300">
           <span className="material-icons">apps</span>
         </button>
+        <ConnectWallet />
       </div>
     </header>
   );
