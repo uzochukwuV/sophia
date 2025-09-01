@@ -10,9 +10,13 @@ export default function Sidebar() {
 
       <nav className="flex flex-col space-y-2">
         <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Feed</p>
-        <a className="nav-link active flex items-center p-3 rounded-md text-white bg-[#0096FF]" href="#">
+        <a className="nav-link active flex items-center p-3 rounded-md text-white bg-[#0096FF]" href="/">
           <span className="material-icons mr-4">home</span>
           Home
+        </a>
+        <a className="nav-link flex items-center p-3 rounded-md text-[#A0A0A0] hover:bg-[#2a2a2a] hover:text-white" href="/onchain">
+          <span className="material-icons mr-4">hub</span>
+          On-chain
         </a>
         <a className="nav-link flex items-center p-3 rounded-md text-[#A0A0A0] hover:bg-[#2a2a2a] hover:text-white" href="#">
           <span className="material-icons mr-4">people</span>
